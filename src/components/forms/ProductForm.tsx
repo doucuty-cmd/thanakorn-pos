@@ -1,6 +1,6 @@
 "use client";
 
-import { useForm } from "react-hook-form";
+import { useForm, FieldValues } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useState, useEffect } from "react";
@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/Input";
 import { useImageUpload } from "@/hooks/useImageUpload";
 import { supabase } from "@/lib/supabase/client";
 
-// ✅ 1. แก้ไข Schema ให้เข้มงวดและใช้ z.coerce เพื่อแปลงค่าเป็น number เสมอ
+// ✅ 1. Schema ใช้ z.coerce เพื่อบังคับแปลง String จาก Input เป็น Number
 const productSchema = z.object({
   name: z.string().min(1, "กรุณากรอกชื่อสินค้า"),
   price: z.coerce.number().min(0, "ราคาต้องไม่ติดลบ"),
@@ -20,15 +20,8 @@ const productSchema = z.object({
   category_id: z.string().optional().nullable(),
 });
 
-// ✅ 2. ประกาศ Type แบบชัดเจน (Explicit Type) เพื่อลดความสับสนของ TypeScript
-type ProductFormValues = {
-  name: string;
-  price: number;
-  cost: number;
-  stock: number;
-  sku?: string | null;
-  category_id?: string | null;
-};
+// ✅ 2. กำหนด Type ให้ชัดเจนตรงตาม Schema
+type ProductFormValues = z.infer<typeof productSchema>;
 
 interface ProductFormProps {
   initialData?: any;
@@ -51,9 +44,8 @@ export const ProductForm = ({ initialData, onSubmit, isLoading, onDelete }: Prod
     fetchCategories();
   }, []);
 
-  // ✅ 3. ใช้ ProductFormValues ที่เราสร้างขึ้น และใส่ @ts-ignore เฉพาะจุดที่ Resolver มีปัญหา
+  // ✅ 3. ระบุ <ProductFormValues> เพื่อให้ register รู้จัก field
   const { register, handleSubmit, formState: { errors } } = useForm<ProductFormValues>({
-    // @ts-ignore
     resolver: zodResolver(productSchema),
     defaultValues: {
       name: initialData?.name || "",
@@ -65,13 +57,15 @@ export const ProductForm = ({ initialData, onSubmit, isLoading, onDelete }: Prod
     },
   });
 
-  const handleFormSubmit = async (data: ProductFormValues) => {
+  // ✅ 4. แก้ไข handleFormSubmit ให้รับค่าที่ยืดหยุ่นขึ้นเพื่อแก้ปัญหา Type Incompatible
+  const handleFormSubmit = async (values: FieldValues) => {
     let finalImageUrl = previewUrl;
     if (imageFile) {
       const uploadedUrl = await uploadImage(imageFile);
       if (uploadedUrl) finalImageUrl = uploadedUrl;
     }
-    onSubmit(data, finalImageUrl);
+    // ส่งข้อมูลออกไปในรูปแบบ ProductFormValues ตามที่ Props ต้องการ
+    onSubmit(values as ProductFormValues, finalImageUrl);
   };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -84,6 +78,7 @@ export const ProductForm = ({ initialData, onSubmit, isLoading, onDelete }: Prod
 
   return (
     <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-6 pb-32">
+      {/* ส่วน Image Upload */}
       <div className="flex flex-col items-center gap-4">
         <div className="relative w-40 h-40 bg-gray-100 rounded-lg overflow-hidden border-2 border-dashed border-gray-300 flex items-center justify-center">
           {previewUrl ? (
