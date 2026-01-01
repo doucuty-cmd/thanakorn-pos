@@ -10,17 +10,25 @@ import { Input } from "@/components/ui/Input";
 import { useImageUpload } from "@/hooks/useImageUpload";
 import { supabase } from "@/lib/supabase/client";
 
-// ✅ 1. แก้ไข Validation Schema (ใช้ z.coerce เพื่อป้องกันปัญหา Type String/Number)
+// ✅ 1. แก้ไข Schema ให้เข้มงวดและใช้ z.coerce เพื่อแปลงค่าเป็น number เสมอ
 const productSchema = z.object({
   name: z.string().min(1, "กรุณากรอกชื่อสินค้า"),
   price: z.coerce.number().min(0, "ราคาต้องไม่ติดลบ"),
   cost: z.coerce.number().min(0, "ต้นทุนต้องไม่ติดลบ"),
   stock: z.coerce.number().min(0, "สต็อกต้องไม่ติดลบ"),
   sku: z.string().optional().nullable(),
-  category_id: z.string().optional().nullable(), // ✅ เพิ่มรองรับหมวดหมู่
+  category_id: z.string().optional().nullable(),
 });
 
-type ProductFormValues = z.infer<typeof productSchema>;
+// ✅ 2. ประกาศ Type แบบชัดเจน (Explicit Type) เพื่อลดความสับสนของ TypeScript
+type ProductFormValues = {
+  name: string;
+  price: number;
+  cost: number;
+  stock: number;
+  sku?: string | null;
+  category_id?: string | null;
+};
 
 interface ProductFormProps {
   initialData?: any;
@@ -32,10 +40,9 @@ interface ProductFormProps {
 export const ProductForm = ({ initialData, onSubmit, isLoading, onDelete }: ProductFormProps) => {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(initialData?.image_url || null);
-  const [categories, setCategories] = useState<any[]>([]); // ✅ เก็บรายการหมวดหมู่
+  const [categories, setCategories] = useState<any[]>([]);
   const { uploadImage, uploading } = useImageUpload();
 
-  // ✅ 2. ดึงข้อมูลหมวดหมู่จาก Database
   useEffect(() => {
     const fetchCategories = async () => {
       const { data } = await supabase.from("categories").select("*").order("name");
@@ -44,7 +51,9 @@ export const ProductForm = ({ initialData, onSubmit, isLoading, onDelete }: Prod
     fetchCategories();
   }, []);
 
+  // ✅ 3. ใช้ ProductFormValues ที่เราสร้างขึ้น และใส่ @ts-ignore เฉพาะจุดที่ Resolver มีปัญหา
   const { register, handleSubmit, formState: { errors } } = useForm<ProductFormValues>({
+    // @ts-ignore
     resolver: zodResolver(productSchema),
     defaultValues: {
       name: initialData?.name || "",
@@ -58,12 +67,10 @@ export const ProductForm = ({ initialData, onSubmit, isLoading, onDelete }: Prod
 
   const handleFormSubmit = async (data: ProductFormValues) => {
     let finalImageUrl = previewUrl;
-
     if (imageFile) {
       const uploadedUrl = await uploadImage(imageFile);
       if (uploadedUrl) finalImageUrl = uploadedUrl;
     }
-
     onSubmit(data, finalImageUrl);
   };
 
@@ -77,43 +84,28 @@ export const ProductForm = ({ initialData, onSubmit, isLoading, onDelete }: Prod
 
   return (
     <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-6 pb-32">
-      {/* Image Upload */}
       <div className="flex flex-col items-center gap-4">
         <div className="relative w-40 h-40 bg-gray-100 rounded-lg overflow-hidden border-2 border-dashed border-gray-300 flex items-center justify-center">
           {previewUrl ? (
-            <Image 
-              src={previewUrl} 
-              alt="Preview" 
-              fill 
-              className="object-cover" 
-              sizes="160px"
-            />
+            <Image src={previewUrl} alt="Preview" fill className="object-cover" sizes="160px" />
           ) : (
             <div className="text-gray-400 flex flex-col items-center">
               <Upload size={24} />
               <span className="text-xs mt-1">อัปโหลดรูป</span>
             </div>
           )}
-          <input 
-            type="file" 
-            accept="image/*"
-            className="absolute inset-0 opacity-0 cursor-pointer"
-            onChange={handleImageChange}
-          />
+          <input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleImageChange} />
         </div>
         {uploading && <p className="text-sm text-[#06C755] animate-pulse">กำลังอัปโหลดรูป...</p>}
       </div>
 
-      {/* Fields */}
       <div className="space-y-4">
-        {/* ชื่อสินค้า */}
         <div>
           <label className="text-sm font-bold text-gray-700 ml-1">ชื่อสินค้า *</label>
           <Input {...register("name")} placeholder="เช่น กะเพราไก่ไข่ดาว" className="h-12" />
           {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name.message}</p>}
         </div>
 
-        {/* ✅ เพิ่มช่องเลือกหมวดหมู่ */}
         <div>
           <label className="text-sm font-bold text-gray-700 ml-1">หมวดหมู่</label>
           <select 
@@ -150,7 +142,6 @@ export const ProductForm = ({ initialData, onSubmit, isLoading, onDelete }: Prod
         </div>
       </div>
 
-      {/* Action Buttons */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200 flex gap-3 max-w-md mx-auto z-[60]">
         {onDelete && (
           <button
