@@ -3,25 +3,27 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import { Loader2, Upload, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { useImageUpload } from "@/hooks/useImageUpload";
+import { supabase } from "@/lib/supabase/client";
 
-// Validation Schema
+// ✅ 1. แก้ไข Validation Schema (ใช้ z.coerce เพื่อป้องกันปัญหา Type String/Number)
 const productSchema = z.object({
   name: z.string().min(1, "กรุณากรอกชื่อสินค้า"),
   price: z.coerce.number().min(0, "ราคาต้องไม่ติดลบ"),
   cost: z.coerce.number().min(0, "ต้นทุนต้องไม่ติดลบ"),
   stock: z.coerce.number().min(0, "สต็อกต้องไม่ติดลบ"),
-  sku: z.string().optional(),
+  sku: z.string().optional().nullable(),
+  category_id: z.string().optional().nullable(), // ✅ เพิ่มรองรับหมวดหมู่
 });
 
 type ProductFormValues = z.infer<typeof productSchema>;
 
 interface ProductFormProps {
-  initialData?: any; // ถ้ามีข้อมูลแปลว่าแก้ไข
+  initialData?: any;
   onSubmit: (data: ProductFormValues, imageUrl: string | null) => void;
   isLoading: boolean;
   onDelete?: () => void;
@@ -30,7 +32,17 @@ interface ProductFormProps {
 export const ProductForm = ({ initialData, onSubmit, isLoading, onDelete }: ProductFormProps) => {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(initialData?.image_url || null);
+  const [categories, setCategories] = useState<any[]>([]); // ✅ เก็บรายการหมวดหมู่
   const { uploadImage, uploading } = useImageUpload();
+
+  // ✅ 2. ดึงข้อมูลหมวดหมู่จาก Database
+  useEffect(() => {
+    const fetchCategories = async () => {
+      const { data } = await supabase.from("categories").select("*").order("name");
+      if (data) setCategories(data);
+    };
+    fetchCategories();
+  }, []);
 
   const { register, handleSubmit, formState: { errors } } = useForm<ProductFormValues>({
     resolver: zodResolver(productSchema),
@@ -40,6 +52,7 @@ export const ProductForm = ({ initialData, onSubmit, isLoading, onDelete }: Prod
       cost: initialData?.cost_price || 0,
       stock: initialData?.stock_qty || 0,
       sku: initialData?.sku || "",
+      category_id: initialData?.category_id || "",
     },
   });
 
@@ -68,7 +81,13 @@ export const ProductForm = ({ initialData, onSubmit, isLoading, onDelete }: Prod
       <div className="flex flex-col items-center gap-4">
         <div className="relative w-40 h-40 bg-gray-100 rounded-lg overflow-hidden border-2 border-dashed border-gray-300 flex items-center justify-center">
           {previewUrl ? (
-            <Image src={previewUrl} alt="Preview" fill className="object-cover" />
+            <Image 
+              src={previewUrl} 
+              alt="Preview" 
+              fill 
+              className="object-cover" 
+              sizes="160px"
+            />
           ) : (
             <div className="text-gray-400 flex flex-col items-center">
               <Upload size={24} />
@@ -82,47 +101,62 @@ export const ProductForm = ({ initialData, onSubmit, isLoading, onDelete }: Prod
             onChange={handleImageChange}
           />
         </div>
-        {uploading && <p className="text-sm text-blue-500">กำลังอัปโหลดรูป...</p>}
+        {uploading && <p className="text-sm text-[#06C755] animate-pulse">กำลังอัปโหลดรูป...</p>}
       </div>
 
       {/* Fields */}
       <div className="space-y-4">
+        {/* ชื่อสินค้า */}
         <div>
-          <label className="text-sm font-medium text-gray-700">ชื่อสินค้า *</label>
-          <Input {...register("name")} placeholder="เช่น กะเพราไก่ไข่ดาว" />
+          <label className="text-sm font-bold text-gray-700 ml-1">ชื่อสินค้า *</label>
+          <Input {...register("name")} placeholder="เช่น กะเพราไก่ไข่ดาว" className="h-12" />
           {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name.message}</p>}
         </div>
 
+        {/* ✅ เพิ่มช่องเลือกหมวดหมู่ */}
+        <div>
+          <label className="text-sm font-bold text-gray-700 ml-1">หมวดหมู่</label>
+          <select 
+            {...register("category_id")}
+            className="w-full h-12 bg-gray-50 border border-gray-200 rounded-xl px-4 focus:outline-none focus:ring-2 focus:ring-[#06C755] transition-all"
+          >
+            <option value="">-- เลือกหมวดหมู่ --</option>
+            {categories.map((cat) => (
+              <option key={cat.id} value={cat.id}>{cat.name}</option>
+            ))}
+          </select>
+        </div>
+
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="text-sm font-medium text-gray-700">ราคาขาย *</label>
-            <Input type="number" {...register("price")} />
+            <label className="text-sm font-bold text-gray-700 ml-1">ราคาขาย *</label>
+            <Input type="number" step="0.01" {...register("price")} className="h-12" />
           </div>
           <div>
-            <label className="text-sm font-medium text-gray-700">ต้นทุน</label>
-            <Input type="number" {...register("cost")} />
+            <label className="text-sm font-bold text-gray-700 ml-1">ต้นทุน</label>
+            <Input type="number" step="0.01" {...register("cost")} className="h-12" />
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="text-sm font-medium text-gray-700">จำนวนสต็อก</label>
-            <Input type="number" {...register("stock")} />
+            <label className="text-sm font-bold text-gray-700 ml-1">จำนวนสต็อก</label>
+            <Input type="number" {...register("stock")} className="h-12" />
           </div>
           <div>
-            <label className="text-sm font-medium text-gray-700">รหัสสินค้า (SKU)</label>
-            <Input {...register("sku")} placeholder="สแกนบาร์โค้ด" />
+            <label className="text-sm font-bold text-gray-700 ml-1">รหัสสินค้า (SKU)</label>
+            <Input {...register("sku")} placeholder="สแกนบาร์โค้ด" className="h-12" />
           </div>
         </div>
       </div>
 
-      {/* Buttons: เพิ่ม z-[60] เพื่อให้ลอยทับเมนูบาร์แน่นอน */}
+      {/* Action Buttons */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200 flex gap-3 max-w-md mx-auto z-[60]">
         {onDelete && (
           <button
             type="button"
             onClick={onDelete}
-            className="flex-1 bg-red-100 text-red-600 h-12 rounded-lg font-bold flex items-center justify-center active:scale-95 transition-transform"
+            className="flex-1 bg-red-50 text-red-500 h-12 rounded-xl font-bold flex items-center justify-center active:scale-95 transition-transform border border-red-100"
           >
             <Trash2 size={20} />
           </button>
@@ -130,7 +164,7 @@ export const ProductForm = ({ initialData, onSubmit, isLoading, onDelete }: Prod
         <button
           type="submit"
           disabled={isLoading || uploading}
-          className="flex-[3] bg-[#06C755] text-white h-12 rounded-lg font-bold flex items-center justify-center disabled:opacity-50 active:scale-95 transition-transform"
+          className="flex-[3] bg-[#06C755] text-white h-12 rounded-xl font-bold flex items-center justify-center disabled:opacity-50 active:scale-95 transition-transform shadow-lg shadow-green-100"
         >
           {isLoading ? <Loader2 className="animate-spin" /> : "บันทึกข้อมูล"}
         </button>
